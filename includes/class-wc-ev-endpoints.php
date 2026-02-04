@@ -114,15 +114,17 @@ class WC_EV_Endpoints {
 	private function handle_resend() {
 		$user_id = null;
 		
-		// Try to get user ID from session (after blocked login)
-		if ( ! session_id() ) {
-			@session_start();
-		}
-		
-		if ( ! empty( $_SESSION['wc_ev_blocked_user_id'] ) ) {
-			$user_id = absint( $_SESSION['wc_ev_blocked_user_id'] );
-			// Clear session
-			unset( $_SESSION['wc_ev_blocked_user_id'] );
+		// Try to get user ID from transient (after blocked login)
+		if ( isset( $_COOKIE['wc_ev_blocked_key'] ) ) {
+			$transient_key = sanitize_text_field( $_COOKIE['wc_ev_blocked_key'] );
+			$user_id = get_transient( $transient_key );
+			
+			if ( $user_id ) {
+				$user_id = absint( $user_id );
+				// Clear transient and cookie
+				delete_transient( $transient_key );
+				setcookie( 'wc_ev_blocked_key', '', time() - 3600, COOKIEPATH, COOKIE_DOMAIN, is_ssl(), true );
+			}
 		}
 		
 		// If currently logged in and needs verification

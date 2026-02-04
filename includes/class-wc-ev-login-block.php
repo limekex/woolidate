@@ -56,11 +56,12 @@ class WC_EV_Login_Block {
 		if ( WC_EV_Scope::instance()->user_needs_verification( $user->ID ) ) {
 			WC_EV_Settings::log( sprintf( 'Login blocked for unverified user ID: %d', $user->ID ) );
 			
-			// Store user ID in session for resend functionality
-			if ( ! session_id() ) {
-				@session_start();
-			}
-			$_SESSION['wc_ev_blocked_user_id'] = $user->ID;
+			// Store user ID in transient for resend functionality (expires in 1 hour)
+			$transient_key = 'wc_ev_blocked_' . md5( $user->user_email );
+			set_transient( $transient_key, $user->ID, HOUR_IN_SECONDS );
+			
+			// Set cookie to track transient key (secure, httponly)
+			setcookie( 'wc_ev_blocked_key', $transient_key, time() + HOUR_IN_SECONDS, COOKIEPATH, COOKIE_DOMAIN, is_ssl(), true );
 			
 			return new WP_Error( 
 				'unverified_email',
@@ -75,12 +76,11 @@ class WC_EV_Login_Block {
 	 * Add resend notice to login form
 	 */
 	public function add_resend_notice() {
-		// Only show if login was just blocked
-		if ( ! session_id() ) {
-			@session_start();
-		}
+		// Only show if login was just blocked (cookie exists)
+		$has_blocked_cookie = isset( $_COOKIE['wc_ev_blocked_key'] );
+		$has_resend_param = isset( $_GET['wc_ev_resend'] );
 		
-		if ( ! empty( $_SESSION['wc_ev_blocked_user_id'] ) || isset( $_GET['wc_ev_resend'] ) ) {
+		if ( $has_blocked_cookie || $has_resend_param ) {
 			?>
 			<p class="wc-ev-resend-notice">
 				<?php esc_html_e( "Didn't receive the email?", 'wc-email-verification-gate' ); ?>
