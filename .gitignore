@@ -1,0 +1,33 @@
+# Ignore system files
+.DS_Store
+Thumbs.db
+
+# Ignore IDE files
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# Ignore logs
+*.log
+
+# Ignore temporary files
+*.tmp
+*.bak
+*.swp
+*~
+
+# Ignore node modules (if any)
+node_modules/
+
+# Ignore vendor directory (if using Composer)
+vendor/
+
+# Ignore language files that will be generated
+languages/*.mo
+languages/*.pot
+
+# Ignore distribution/build artifacts
+dist/
+build/
+*.zip
