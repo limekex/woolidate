@@ -36,6 +36,9 @@ class WC_EV_Admin {
 		add_filter( 'woocommerce_admin_order_actions', array( $this, 'add_order_actions' ), 10, 2 );
 		add_action( 'admin_action_wc_ev_release_order', array( $this, 'release_order' ) );
 		
+		// Include await-verification orders in admin orders list (HPOS compatibility)
+		add_filter( 'woocommerce_order_list_table_prepare_items_query_args', array( $this, 'include_custom_status_in_admin_list' ), 10, 1 );
+		
 		// Admin notices
 		add_action( 'admin_notices', array( $this, 'admin_notices' ) );
 		
@@ -259,6 +262,39 @@ class WC_EV_Admin {
 			<?php endif; ?>
 		</table>
 		<?php
+	}
+	
+	/**
+	 * Include await-verification status in admin orders list
+	 * 
+	 * This filter addresses an issue where HPOS doesn't automatically include custom
+	 * order statuses when no status filter is applied in the admin orders page.
+	 * Without this filter, orders with 'wc-await-verification' status would be invisible
+	 * in the default "All orders" view, even though the status is properly registered.
+	 * 
+	 * Note: This only affects the default view. When users explicitly filter by specific
+	 * statuses, we respect their choice and don't inject our custom status.
+	 * 
+	 * Works with both HPOS and legacy post-based storage.
+	 */
+	public function include_custom_status_in_admin_list( $args ) {
+		// Get current screen to ensure we're on the orders page
+		$screen = function_exists( 'get_current_screen' ) ? get_current_screen() : null;
+		
+		// Only modify on the orders list page
+		if ( ! $screen || ( 'woocommerce_page_wc-orders' !== $screen->id && 'edit-shop_order' !== $screen->id ) ) {
+			return $args;
+		}
+		
+		// Only modify when no specific status is set (showing "all orders")
+		// Don't interfere with user-applied status filters
+		if ( ! isset( $args['status'] ) || empty( $args['status'] ) ) {
+			// When no status filter is applied, explicitly include all registered statuses
+			// This ensures HPOS includes our custom status in the query
+			$args['status'] = array_keys( wc_get_order_statuses() );
+		}
+		
+		return $args;
 	}
 	
 	/**
