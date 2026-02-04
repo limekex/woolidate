@@ -40,6 +40,9 @@ class WC_EV_Order_Gate {
 		
 		// Handle new user registration during checkout
 		add_action( 'woocommerce_created_customer', array( $this, 'handle_new_customer' ), 10, 1 );
+		
+		// Make await-verification orders visible in customer account
+		add_filter( 'woocommerce_my_account_my_orders_query', array( $this, 'include_await_verification_in_my_orders' ), 10, 1 );
 	}
 	
 	/**
@@ -123,8 +126,17 @@ class WC_EV_Order_Gate {
 		
 		WC_EV_Settings::log( sprintf( 'Order %d: Held for verification (User ID: %d)', $order->get_id(), $user_id ) );
 		
-		// Send verification email if cooldown allows
-		$this->send_verification_email( $user_id, $order->get_id() );
+		// Only send verification email if one hasn't been sent very recently
+		// This handles existing unverified users placing orders, while avoiding
+		// duplicate emails during checkout registration flow
+		$last_sent = (int) get_user_meta( $user_id, 'wc_ev_verification_sent_at', true );
+		
+		// If no email was ever sent ($last_sent = 0), send one now
+		// If email was sent recently (< 5 minutes), don't send to avoid duplicates
+		// If email was sent a while ago (> 5 minutes), send a reminder
+		if ( ! $last_sent || ( time() - $last_sent > 300 ) ) {
+			$this->send_verification_email( $user_id, $order->get_id() );
+		}
 	}
 	
 	/**
@@ -179,5 +191,31 @@ class WC_EV_Order_Gate {
 			
 			WC_EV_Settings::log( sprintf( 'Order %d: Released to processing after verification (User ID: %d)', $order->get_id(), $user_id ) );
 		}
+	}
+	
+	/**
+	 * Include await-verification orders in My Account orders
+	 */
+	public function include_await_verification_in_my_orders( $args ) {
+		// Ensure status includes await-verification
+		if ( ! isset( $args['status'] ) || 'any' === $args['status'] ) {
+			// If no status specified or "any", we need to be careful not to break the default behavior
+			// WooCommerce by default shows specific statuses, so we'll just add ours to the common list
+			// We'll set status to an array of common statuses plus our custom one
+			$args['status'] = array_merge(
+				array( 'pending', 'processing', 'on-hold', 'completed', 'cancelled', 'refunded', 'failed' ),
+				array( 'await-verification' )
+			);
+		} elseif ( is_array( $args['status'] ) ) {
+			// If status is already an array, add our status to it if not already present
+			if ( ! in_array( 'await-verification', $args['status'], true ) ) {
+				$args['status'][] = 'await-verification';
+			}
+		} else {
+			// If it's a single status string, convert to array and add ours
+			$args['status'] = array( $args['status'], 'await-verification' );
+		}
+		
+		return $args;
 	}
 }
