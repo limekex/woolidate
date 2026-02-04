@@ -130,12 +130,11 @@ class WC_EV_Order_Gate {
 		// This handles existing unverified users placing orders, while avoiding
 		// duplicate emails during checkout registration flow
 		$last_sent = (int) get_user_meta( $user_id, 'wc_ev_verification_sent_at', true );
-		$time_since_last_email = time() - $last_sent;
 		
-		// Only send if no email sent in last 5 minutes (300 seconds)
-		// For new customers, handle_new_customer() sends the email immediately,
-		// so this check prevents duplicate sends during checkout
-		if ( $time_since_last_email > 300 ) {
+		// If no email was ever sent ($last_sent = 0), send one now
+		// If email was sent recently (< 5 minutes), don't send to avoid duplicates
+		// If email was sent a while ago (> 5 minutes), send a reminder
+		if ( ! $last_sent || ( time() - $last_sent > 300 ) ) {
 			$this->send_verification_email( $user_id, $order->get_id() );
 		}
 	}
@@ -198,15 +197,23 @@ class WC_EV_Order_Gate {
 	 * Include await-verification orders in My Account orders
 	 */
 	public function include_await_verification_in_my_orders( $args ) {
-		// Add await-verification to the status filter if it exists
-		if ( isset( $args['status'] ) ) {
-			// If status is an array, add our status to it
-			if ( is_array( $args['status'] ) ) {
+		// Ensure status includes await-verification
+		if ( ! isset( $args['status'] ) || 'any' === $args['status'] ) {
+			// If no status specified or "any", we need to be careful not to break the default behavior
+			// WooCommerce by default shows specific statuses, so we'll just add ours to the common list
+			// We'll set status to an array of common statuses plus our custom one
+			$args['status'] = array_merge(
+				array( 'pending', 'processing', 'on-hold', 'completed', 'cancelled', 'refunded', 'failed' ),
+				array( 'await-verification' )
+			);
+		} elseif ( is_array( $args['status'] ) ) {
+			// If status is already an array, add our status to it if not already present
+			if ( ! in_array( 'await-verification', $args['status'], true ) ) {
 				$args['status'][] = 'await-verification';
-			} else {
-				// If it's a single status, convert to array and add ours
-				$args['status'] = array( $args['status'], 'await-verification' );
 			}
+		} else {
+			// If it's a single status string, convert to array and add ours
+			$args['status'] = array( $args['status'], 'await-verification' );
 		}
 		
 		return $args;
