@@ -36,6 +36,9 @@ class WC_EV_Admin {
 		add_filter( 'woocommerce_admin_order_actions', array( $this, 'add_order_actions' ), 10, 2 );
 		add_action( 'admin_action_wc_ev_release_order', array( $this, 'release_order' ) );
 		
+		// Include await-verification orders in admin orders list (HPOS compatibility)
+		add_filter( 'woocommerce_order_list_table_prepare_items_query_args', array( $this, 'include_custom_status_in_admin_list' ), 10, 1 );
+		
 		// Admin notices
 		add_action( 'admin_notices', array( $this, 'admin_notices' ) );
 		
@@ -259,6 +262,43 @@ class WC_EV_Admin {
 			<?php endif; ?>
 		</table>
 		<?php
+	}
+	
+	/**
+	 * Include await-verification status in admin orders list
+	 * This ensures orders with our custom status are visible in the WP admin orders page
+	 * Works with both HPOS and legacy post-based storage
+	 */
+	public function include_custom_status_in_admin_list( $args ) {
+		// Get current screen to ensure we're on the orders page
+		$screen = function_exists( 'get_current_screen' ) ? get_current_screen() : null;
+		
+		// Only modify on the orders list page
+		if ( ! $screen || ( 'woocommerce_page_wc-orders' !== $screen->id && 'edit-shop_order' !== $screen->id ) ) {
+			return $args;
+		}
+		
+		// If no specific status is set, or if status is 'all', ensure our custom status is included
+		if ( ! isset( $args['status'] ) || empty( $args['status'] ) ) {
+			// When no status filter is applied, explicitly set to include all statuses
+			// This is necessary for HPOS to show custom statuses
+			$args['status'] = array_keys( wc_get_order_statuses() );
+		} elseif ( 'any' === $args['status'] || 'all' === $args['status'] ) {
+			// Get all order statuses
+			$statuses = array_keys( wc_get_order_statuses() );
+			// Ensure our custom status is in the list
+			if ( ! in_array( 'wc-await-verification', $statuses, true ) ) {
+				$statuses[] = 'wc-await-verification';
+			}
+			$args['status'] = $statuses;
+		} elseif ( is_array( $args['status'] ) ) {
+			// If status is already an array, add our status if not present
+			if ( ! in_array( 'await-verification', $args['status'], true ) && ! in_array( 'wc-await-verification', $args['status'], true ) ) {
+				$args['status'][] = 'wc-await-verification';
+			}
+		}
+		
+		return $args;
 	}
 	
 	/**
